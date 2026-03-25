@@ -8,6 +8,8 @@ from typing import Tuple
 
 import torch
 from torch import Tensor
+from torch.distributed.tensor import Replicate, Shard
+from torch.distributed.tensor.experimental import register_sharding
 from torch.utils._triton import has_triton
 
 from torchao.prototype.moe_training.kernels.mxfp8.cute_utils import (
@@ -973,6 +975,18 @@ def _fake_mxfp8_quantize_2d_cutedsl_custom_op(
         dtype=torch.float8_e8m0fnu,
     )
     return q_data, scales
+
+
+@register_sharding(torch.ops.torchao._mxfp8_quantize_2d_cutedsl_custom_op.default)
+def custom_triton_to_mxfp8_dim0_sharding(
+    x, block_size=32, scaling_mode: str = "rceil", stage_count: int = 2
+):
+    # order is: ([outputs, ...], [inputs, ...])
+    replicate = ([Replicate(), Replicate()], [Replicate(), None, None, None])
+    shard_dim0 = ([Shard(0), Shard(0)], [Shard(0), None, None, None])
+    shard_dim1 = ([Shard(1), Shard(1)], [Shard(1), None, None, None])
+    acceptable_shardings = [replicate, shard_dim0, shard_dim1]
+    return acceptable_shardings
 
 
 if _mxfp8_cuda_kernels_available:
